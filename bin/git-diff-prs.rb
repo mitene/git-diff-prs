@@ -1,0 +1,119 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'open3'
+require 'octokit'
+
+# This class represents an item in the list
+class ListItem
+  attr_reader :pr # Octokit PR
+
+  def initialize(pull_request)
+    @pr = pull_request
+  end
+
+  def to_checklist
+    "- [ ] ##{pr.number} #{pr.title}" + mention
+  end
+
+  def html_link
+    pr.rels[:html].href
+  end
+
+  def mention
+    mention = if pr.assignee
+                "@#{pr.assignee.login}"
+              elsif pr.user
+                "@#{pr.user.login}"
+              end
+
+    mention ? " #{mention}" : ''
+  end
+end
+
+def git(*command)
+  command = ['git', *command.map(&:to_s)]
+  out, status = Open3.capture2(*command)
+  unless status.success?
+    raise "Failed to execute `#{command.join(' ')}`: #{status}"
+  end
+
+  out.each_line
+end
+
+def repository
+  @repository ||= begin
+    remote = git(:config, 'remote.origin.url').first.chomp
+
+    remote_url = URI.parse(remote)
+    remote_url.path.sub(%r{^/}, '').sub(/\.git$/, '')
+  end
+end
+
+def obtain_token!
+  ENV.fetch('GITHUB_DIFF_PRS_TOKEN')
+end
+
+def parse_args!
+  if ARGV.empty? || ARGV.size > 1
+    puts 'Usage: git-diff-prs old_commit..new_commit'
+    exit 1
+  end
+
+  diff = ARGV[0]
+
+  verify_diff!(diff)
+
+  diff
+end
+
+def verify_diff!(diff)
+  diffs = diff.split('..')
+  raise 'Usage: git-diff-prs old_commit..new_commit' unless diffs.size == 2
+
+  diffs.each { |ref| raise "Invalid ref: #{ref}" unless verify_ref(ref) }
+rescue StandardError => e
+  puts e
+  exit 1
+end
+
+def verify_ref(ref)
+  git(:show, ref)
+  true
+rescue StandardError
+  false
+end
+
+def fetch_merge_commits(diff)
+  git(:log, '--merges', '--pretty=format:%P', diff.to_s).map do |l|
+    _, sha1 = l.chomp.split(/\s+/)
+    sha1
+  end
+end
+
+def fetch_pr_numbers(merge_sha1s)
+  git('ls-remote', 'origin', 'refs/pull/*/head').map do |l|
+    sha1, ref = l.chomp.split(/\s+/)
+    next unless merge_sha1s.include? sha1
+
+    m = ref.match(%r{^refs/pull/(?<pr_num>\d+)/head$})
+    m && m[:pr_num]
+  end.compact
+end
+
+def main
+  diff = parse_args!
+  client = Octokit::Client.new access_token: obtain_token!
+
+  merge_sha1s = fetch_merge_commits(diff)
+
+  merge_pr_numbers = fetch_pr_numbers(merge_sha1s)
+
+  checklists = merge_pr_numbers
+               .map { |prn| client.pull_request(repository, prn) }
+               .map { |pr| ListItem.new(pr).to_checklist }
+
+  puts checklists
+end
+
+main
