@@ -45,7 +45,7 @@ def repository
   @repository ||= begin
     remote = git(:config, 'remote.origin.url').first.chomp
 
-    remote = "ssh://#{remote.sub(':', '/')}" unless remote == %r{^\w+://}
+    remote = "ssh://#{remote.sub(':', '/')}" unless remote =~ %r{^\w+://}
     remote_url = URI.parse(remote)
     remote_url.path.sub(%r{^/}, '').sub(/\.git$/, '')
   end
