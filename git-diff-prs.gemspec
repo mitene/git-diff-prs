@@ -5,7 +5,7 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 Gem::Specification.new do |spec|
   spec.name          = 'git-diff-prs'
-  spec.version       = '0.0.1'
+  spec.version       = '0.0.2'
   spec.authors       = ['hkurokawa']
   spec.email         = ['hirosh.kurokawa@gmail.com']
   spec.summary       = 'List up pull requests between the commits'
