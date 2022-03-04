@@ -4,16 +4,23 @@
 require 'open3'
 require 'octokit'
 
+OPTION_SHORT = '--short'
+
 # This class represents an item in the list
 class ListItem
   attr_reader :pr # Octokit PR
 
-  def initialize(pull_request)
+  def initialize(pull_request, is_short)
     @pr = pull_request
+    @is_short = is_short
   end
 
   def to_checklist
-    "- [ ] ##{pr.number} #{pr.title}" + mention
+    if @is_short
+      "- [ ] ##{pr.number}" + mention
+    else
+      "- [ ] ##{pr.number} #{pr.title}" + mention
+    end
   end
 
   def html_link
@@ -56,16 +63,24 @@ def obtain_token!
 end
 
 def parse_args!
-  if ARGV.empty? || ARGV.size > 1
-    puts 'Usage: git-diff-prs old_commit..new_commit'
+  case
+  when ARGV.empty?
+  when ARGV[0] != OPTION_SHORT && ARGV.size != 1
+  when ARGV[0] == OPTION_SHORT && ARGV.size != 2
+    puts 'Usage: git-diff-prs [--short] old_commit..new_commit'
     exit 1
   end
 
-  diff = ARGV[0]
+  is_short, diff =
+    if ARGV[0] == OPTION_SHORT
+      [true, ARGV[1]]
+    else
+      [false, ARGV[0]]
+    end
 
   verify_diff!(diff)
 
-  diff
+  [is_short, diff]
 end
 
 def verify_diff!(diff)
@@ -103,7 +118,7 @@ def fetch_pr_numbers(merge_sha1s)
 end
 
 def main
-  diff = parse_args!
+  is_short, diff = parse_args!
   client = Octokit::Client.new access_token: obtain_token!
 
   merge_sha1s = fetch_merge_commits(diff)
@@ -112,7 +127,7 @@ def main
 
   checklists = merge_pr_numbers
                .map { |prn| client.pull_request(repository, prn) }
-               .map { |pr| ListItem.new(pr).to_checklist }
+               .map { |pr| ListItem.new(pr, is_short).to_checklist }
 
   puts checklists
 end
